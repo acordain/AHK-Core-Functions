@@ -1,0 +1,176 @@
+;VARIABLES==============================================================
+
+Global breakloop := False
+Global breakvar := 0
+Global ClipChange := False
+Global ClipSaveText := ""
+Global A_Return := "`r`n"
+Global needle
+Global newNeedle
+Global H
+Global W
+Global xloc
+Global yloc
+
+;MAIN===================================================================
+~Esc::
+{ 
+	Critical()
+	Global breakloop
+	if (breakloop = False)
+	{
+		breakloop := True
+	}
+	Return
+}
+
+
+ClipChanged(DataType) {
+	;Tells Clip(), CopyClip(), and CutClip() when the clipboard has received new text
+	;Even though we don't use it, we seem to need to pass DataType or computer says no
+	Global ClipChange := True
+	}
+
+Tip(tiptext, sec:=2)
+;Displays a tooltip for (default) 2 seconds
+{
+	ToolTip(tiptext), SetTimer(ToolTip, -1000*sec)
+}
+
+RemoveToolTip()
+;Clears the current tooltip
+{
+	ToolTip()
+} 
+
+ConvertUpper()
+;Assumes word is already selected and copied
+{
+	CaseHolder := A_Clipboard ;Operating directly on the Clipboard tends to be laggy, operating in variables seems safer	
+	A_Clipboard := "" ;Clears clipboard so ClipWait has something to detect
+	CaseHolder := StrTitle(CaseHolder)
+	Clip(CaseHolder)
+	Send("{Ctrl Down}v{Ctrl Up}")
+	ClipRestore()
+}
+
+ConvertLower()
+;Assumes word is already selected and copied
+{
+	CaseHolder := A_Clipboard ;Operating directly on the Clipboard tends to be laggy, operating in variables seems safer
+	A_Clipboard := "" ;Clears clipboard so ClipWait has something to detect
+	CaseHolder := StrLower(CaseHolder)
+	Clip(CaseHolder)
+	Send("{Ctrl Down}v{Ctrl Up}")
+	ClipRestore()
+}
+
+Clip(cliptext, duration:=1, displaytext:="Oops")
+;Sends cliptext to the clipboard, then waits for it to be received before the script continues
+{
+	ClipSave() ;Saves the existing clipboard for later restoration
+	Global ClipChange
+	ClipChange := "" ;Tracks when the clipboard actually receives cliptext
+	A_Clipboard := cliptext
+	ClipLoop(duration, displaytext) ;Waits for the clipboard to receive the new text
+}
+
+ClipLoop(duration:=1, displaytext:="Oops", increment:=15)
+;Loops until the clipboard receives the text sent by Clip(), etc.
+{
+	Global ClipChange
+	cycle := 0
+	Loop
+	{
+		ListLines(false)
+		If (ClipChange = True)
+		{
+			ClipChange := "" ;Resets ClipChange on success
+			ListLines(true)
+			Return
+		}
+		cycle := cycle+.1
+		Sleep(increment)
+		If (cycle > duration) ;Timeout
+		{
+			Tip(displaytext)
+			Send("{Alt Up}")
+			ListLines(true)
+			Exit()
+		}
+	}
+}
+
+CopyClip(duration:=1, displaytext:="Oops") {
+;Copies selected text, then waits for it to be received before the script continues
+	ClipSave() ;Saves the existing clipboard for later restoration
+	Global ClipChange
+	ClipChange := "" ;Tracks when the clipboard actually receives cliptext
+	Send("{Ctrl Down}c{Ctrl Up}")
+	ClipLoop(duration, displaytext) ;Waits for the clipboard to receive the new text
+}
+
+CutClip(duration:=1, displaytext:="Oops")
+;Cuts selected text, then waits for it to be received before the script continues
+{
+	ClipSave() ;Saves the existing clipboard for later restoration
+	Global ClipChange
+	ClipChange := "" ;Tracks when the clipboard actually receives cliptext
+	Send("{Ctrl Down}x{Ctrl Up}")
+	ClipLoop(duration, displaytext, 25) ;Waits for the clipboard to receive the new text
+}
+
+ClipSave(duration:=1)
+;Stores the current clipboard for later restoration
+{
+	Global ClipChange
+	ClipChange := ""
+	Global ClipSaveText
+	ClipSaveText := A_Clipboard
+	A_Clipboard := ""
+	ClipLoop(duration, , 25) ;Waits for the clipboard to receive the new text
+}
+
+ClipRestore(duration:=1)
+;Restores the saved clipboard from ClipSave
+{
+	Sleep(200) ;To prevent restoring the clipboard before the previous line has finished pasting
+	Global ClipChange
+	ClipChange := ""
+	Global ClipSaveText
+	A_Clipboard := ClipSaveText ;Restores the saved clipboard
+	ClipLoop(duration, , 25) ;Waits for the clipboard to receive the new text
+}
+
+ArrayTrim(An_array)
+;Removes empty values from an array
+{
+	for index, value in an_array
+	{
+		if (value = "")
+		{
+			an_array.RemoveAt(index)
+		}
+	}
+}
+
+GUIWay(WinWidth:=100) ;Positions GUI window in top center corner of screen the mouse is not on
+{
+	CoordMode("Mouse", "Screen")
+	MouseGetPos(&MouseX, &MouseY)
+	MonitorGet(1, &Mon1Left, &Mon1Top, &Mon1Right, &Mon1Bottom)
+	MonitorGet(2, &Mon2Left, &Mon2Top, &Mon2Right, &Mon2Bottom)
+	If (MouseX > Mon1Left and MouseX < Mon1Right) ;Mouse on monitor 1
+	{
+		;Tip("Monitor 1") ;Home: 1 is on the right/Dell
+		XLoc := 0-WinWidth
+		;XLoc := Mon2Right-WinWidth ;Positions window in far corner of other monitor
+	}
+	Else ;Mouse on monitor 2
+	{
+		;Tip("Monitor 2") ;Home: 2 is on the left/Asus
+		XLoc := 0
+		;XLoc := Mon1Left ;Positions window in far corner of other monitor
+	}
+	Return "X" . XLoc . "Y0"
+}
