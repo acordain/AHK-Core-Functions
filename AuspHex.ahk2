@@ -1,0 +1,385 @@
+;DIRECTIVES====================================================================
+#Requires Autohotkey v2.0+
+#SingleInstance Force ;Prevents multiple versions of script running
+#UseHook true ;Helps ensure modifier keys don't remain pressed after hotkey ends
+#Include "%A_ScriptDir%\Core Functions.ahk2" ;Contains functions/variables required for script to run
+;VARIABLES=====================================================
+
+Global hex2dec_dict := Map("A","10", "B","11", "C","12", "D","13", "E","14", "F","15")
+Global color1 := ""
+Global color2 := ""
+Global count := 0
+Global Brown := "964B00"
+Global Burgundy := "980000"
+Global Orange := "FF9900"
+Global Violet := "9900FF"
+Global Transp := "F0F0F0"
+
+Global spectrum := [
+"Black",
+"Gray",
+Brown,
+Burgundy,
+"Red",
+Orange,
+"Yellow",
+"Lime",
+"Aqua",
+"Green",
+"Blue",
+Violet,
+"Fuchsia",
+"White",
+]
+
+;TRAY MENU====================================================
+;Adds a tray icon submenu to launch AuspHex/HexVision
+Tray:= A_TrayMenu
+Tools := Menu()
+Tools.Add("AuspHex", AuspHex)
+Tools.Add("HexVision", HexVision)
+Tray.Add() ;Line break
+Tray.Add("Tools", Tools)
+
+
+;AUSPHEX FUNCTIONS============================================
+AuspHex(A_ThisMenuItem:="", A_ThisMenuItemPos:="", A_ThisMenu:="")
+;Creates AuspHex window and runs HexVision
+{
+	Global
+	;GUI parameters---------------------------------------------
+	AuspHexWindow := Gui()
+	AuspHexWindow.Title := "AuspHex - Color Viewer & Contrast Analyzer"
+	AuspHexWindow.Opt("-MaximizeBox -MinimizeBox +AlwaysOnTop +Owner +MinSize")  ;-Maximize/MinimizeBox removes the Maximize/Minimize buttons; +Owner avoids a taskbar button
+	AuspHexWindow.SetFont("s12", "Calibri")
+	AuspHexWindow.MarginX := 8
+	
+	;Hex fields-------------------------------------------------
+	;Hex1 label
+	AuspHexWindow.Add("Text", "y13", "Hex1")
+	AuspHexWindow.MarginX := 3
+	
+	;Hex1
+	hex1 := AuspHexWindow.Add("Edit", "vHex1 X+M y10 w75 Limit6", "Font") ;Display field for hex code
+	
+	;HexSwap
+	AuspHexWindow.MarginX := 5
+	swapButton := AuspHexWindow.Add("Button", "ym X+M r.7 w30" , "↔")
+	swapButton.SetFont("s10") ;Shrinks the font to fit the window better
+	AuspHexWindow.MarginX := 3
+	
+	;Hex2 label
+	AuspHexWindow.Add("Text", "X+M y13", "Hex2")
+	
+	;Hex2
+	hex2 := AuspHexWindow.Add("Edit", "vHex2 X+M y10 w75 r1 YM Limit6", "Background") ;Display field for hex code
+	AuspHexWindow.MarginX := 8
+	hex2.SetFont("s10") ;Shrinks the font to fit "background" in the window
+	
+	;Button Events
+	Hex1.OnEvent("Change", ContrastCheck) ;Runs the checker in case the user types in a hex value
+	Hex2.OnEvent("Change", ContrastCheck) ;Runs the checker in case the user types in a hex value
+	swapButton.OnEvent("Click", swapHexes)
+	
+	;Color contrast results------------------------------------
+	ContrastMessage := AuspHexWindow.Add("Edit", "xm r4.5 w260 -VScroll Section", "Alt+Click to select Hex1" . A_Return . "Alt+Double-click to select Hex2") ;Displays results of the color contrast check
+	
+	;Color contrast displays-----------------------------------
+	AuspHexWindow.Add("GroupBox", "r1.5 w260", "Contrast visualizer")
+	
+	contrastViewRegular := AuspHexWindow.Add("Edit", "xp+8 yp+28 w100 r1.2 -VScroll cF0F0F0 Background" Transp, "Regular text") ;Displays example text in selected colors; starts with default window background color
+	
+	contrastViewLarge := AuspHexWindow.Add("Edit", "xp+135 w109 r1.2 -VScroll cF0F0F0 Background" Transp, "Large text") ;Displays example text in selected colors; starts with default window background color
+	contrastViewLarge.SetFont("s14 w700") ;Large font, IE, 14pt bold
+	
+	;Closing---------------------------------------------------
+	AuspHexWindow.Add("Text", "xs", "Press Escape to cancel")
+	AuspHexWindow.OnEvent("Close", AuspHex_Destroy)
+	
+	;Spectrum footer------------------------------------------
+	AuspHexWindow.MarginX := 0
+	AuspHexWindow.MarginY := 0
+	AuspHexWindow.Add("Text", "x0 y+8 Section w20 h20 Background" spectrum[1])
+	AuspHexWindow.Add("Text", "x20 ys w20 h20 Background" spectrum[2])
+	AuspHexWindow.Add("Text", "x40 ys w20 h20 Background" spectrum[3])
+	AuspHexWindow.Add("Text", "x60 ys w20 h20 Background" spectrum[4])
+	AuspHexWindow.Add("Text", "x80 ys w20 h20 Background" spectrum[5])
+	AuspHexWindow.Add("Text", "x100 ys w20 h20 Background" spectrum[6])
+	AuspHexWindow.Add("Text", "x120 ys w20 h20 Background" spectrum[7])
+	AuspHexWindow.Add("Text", "x140 ys w20 h20 Background" spectrum[8])
+	AuspHexWindow.Add("Text", "x160 ys w20 h20 Background" spectrum[9])
+	AuspHexWindow.Add("Text", "x180 ys w20 h20 Background" spectrum[10])
+	AuspHexWindow.Add("Text", "x200 ys w20 h20 Background" spectrum[11])
+	AuspHexWindow.Add("Text", "x220 ys w20 h20 Background" spectrum[12])
+	AuspHexWindow.Add("Text", "x240 ys w20 h20 Background" spectrum[13])
+	AuspHexWindow.Add("Text", "x260 ys w18 h20 Background" spectrum[14])
+
+	AuspHexWindow.Show("X0 Y0 NA")
+	HexVision()
+}
+
+HexVision(A_ThisMenuItem:="", A_ThisMenuItemPos:="", A_ThisMenu:="")
+;Displays the color and hex code of the pixel currently under the mouse cursor
+{
+	Global
+	
+	CoordMode "Mouse", "Screen"
+	CoordMode "Pixel", "Screen"
+	
+	ColorSwatch := Gui()
+	ColorSwatch.Opt("+AlwaysOnTop -Caption +ToolWindow") ;-Caption removes border and title bar; +ToolWindow hides the taskbar button
+	ColorSwatch.SetFont("w700") ;Bolds text for visibility
+	HexDisplay := ColorSwatch.add("Text", "center", "0000000")
+	ListLines False
+	While breakloop  = False
+	{
+		ListLines False
+		MouseGetPos(&MouseX, &MouseY) ;Gets mouse location
+		Local color0x := PixelGetColor(MouseX, MouseY) ;Gets pixel color at mouse location
+		color := SubStr(color0x, 3) ;Removes "0x" from the start of the hex code, EG, "0xFFFFFF"
+		
+		buildSwatch(color)
+	}
+	ListLines True
+	breakloop := False ; Resets breakloop once it's escape us from the loop
+	AuspHex_Destroy(ColorSwatch)
+	Return
+}
+
+buildSwatch(hex)
+;Updates ColorSwatch with current color and hex code
+{
+	Global
+	contrast_font := contrastingFont(color) ;Determines whether to use white or black text based on ColorSwatch's current background color
+	ListLines False
+	
+	Try { ;Prevents an error window if the GUI was destroyed
+		ColorSwatch.BackColor := color ;Changes the GUI background color to the color of the pixel under the mouse cursor
+		HexDisplay.opt("c" . contrast_font) ;Sets font color
+		HexDisplay.Text := color ;Displays the hex code
+		ColorSwatch.Show("x" . MouseX+10 . " y" . MouseY-30 . " NA Autosize") ;Shows the GUI near the mouse cursor
+	}
+}
+
+contrastingFont(hexCode)
+;Returns either white or black, based on which font color will be more visible against the hexCode background
+{
+	decArray := hex2Dec(hexCode)
+	luminance := (0.299 * decArray[1]) + (0.587 * decArray[2]) + (0.114 * decArray[3])
+	;Returns white for dark colors, black for light colors
+	If (luminance < 128)
+	{
+		Return "FFFFFF" ;White
+	}
+	Else return "000000" ;Black
+}
+
+recolor_visualizer(hexCode, this_hex) ;Loads the hex code into hex1 (for single button press) or hex2 (double/multi press) and changes the respective color in the contrast visualizers
+{
+	Global
+	
+	If this_hex = Hex1 {
+		Hex1.SetFont("s12") ;Font size was shrunk to fit "Background" in the window, so we reset the size here
+		contrastViewRegular.Opt("c" . hexCode) ;Changes visualizer font color to display selected color
+		contrastViewLarge.Opt("c" . hexCode) ;Changes visualizer font color to display selected color
+	}
+	Else {
+		contrastViewRegular.Opt("Background" . hexCode) ;Changes visualizer background to display selected color
+		contrastViewLarge.Opt("Background" . hexCode) ;Changes visualizer background to display selected color
+
+	}
+	contrastViewRegular.Value := contrastViewRegular.Value ;Resets the text to apply the new Opts
+	contrastViewLarge.Value := contrastViewLarge.Value ;Resets the text to apply the new Opts
+	
+}
+
+ContrastCheck(*)
+;Converts hex1 and hex2 into RGB values, calculates their luminance, and sends their contrast ratio to evaluateContrast()
+{
+	Global
+	ListLines True
+	color1 := hex1.Value
+	color2 := hex2.Value
+	
+	If (is_hexcode(color1) && is_hexcode(color2)) ;Prevents errors 
+	{
+
+		
+		;hex1.Value := StrUpper(color1) ;Loads hexCode into relevant Edit, forcing uppercase if the user entered a hex code
+		
+		
+		Try {
+			recolor_visualizer(color1, hex1) ;Updates GUI with current hex values
+			recolor_visualizer(color2, hex2) ;Updates GUI with current hex values
+		}
+		Catch {  ;Prevents an error if the user enters text
+			Tip("Invalid hex code")
+			Exit
+		}
+		
+		deces1 := hex2Dec(color1) ;Converts hex code to RGB array
+		lum1 := calculateLuminance(deces1) ;Calculates the color's luminance
+		
+		deces2 := hex2Dec(color2) ;Converts hex code to RGB array
+		lum2 := calculateLuminance(deces2) ;Calculates the color's luminance
+		
+		;Converts luminance to color contrast
+		If (lum2 > lum1)
+		{
+			contrast := (lum2+.05)/(lum1+.05)
+		}
+		Else
+		{
+			contrast := (lum1+.05)/(lum2+.05)
+		}
+		;Evaluates color contrast
+		evaluateContrast(contrast)
+	}
+}
+
+is_hexcode(x) {
+	Return RegExMatch(x, "^([A-Fa-f0-9]{6})$")
+}
+
+hex2Dec(hexCode)
+;Separates a six digit hex code into R, G, B decimal values, EG, 007DFF > 0, 125, 255
+{
+	If  is_hexcode(hexCode) {
+		hexCode := StrUpper(hexCode)
+		red := SubStr(hexCode, 1, 2)
+		green := SubStr(hexCode, 3, 2)
+		blue := SubStr(hexCode, 5, 2)
+		colorArray := [red, green, blue]
+
+		For index, value in colorArray
+		;Converts hex values to decimal
+		{
+			firstDigit := SubStr(value, 1, 1)
+			secondDigit := SubStr(value, 2, 1)
+			
+			If hex2dec_dict.Has(firstDigit)
+			{
+				firstDigit := hex2dec_dict[firstDigit]
+			}
+			If hex2dec_dict.Has(secondDigit)
+			{
+				secondDigit := hex2dec_dict[secondDigit]
+			}
+			decValue := (firstDigit*16)+secondDigit
+			colorArray[index] := decValue
+		}
+		Return colorArray
+	}
+	Else {  ;Prevents an error if the user enters text
+	Tip("Invalid hex code")
+	Exit
+	}
+}
+
+
+calculateLuminance(decArray)
+;Returns the luminance (brightness) of a color
+{
+	Loop 3
+	{
+		component := decArray[A_Index]/255
+		if (component <= 0.039280000000000002)
+		{
+			this_color := component/12.92
+		}
+		else
+		{
+			this_color := ((component+0.055)/1.055)**2.4
+		}		
+		decArray[A_Index] := this_color
+	}
+	lum := (0.2126*decArray[1])+(0.7152*decArray[2])+(0.0722*decArray[3])
+	Return lum
+}
+
+evaluateContrast(ratio)
+;Evaluates the color contrast according to WCAG 2.2 AAA standards and displays the results in the AuspHex window
+{
+	ratio := Round(ratio, 1)
+	if (ratio = 0.0)
+	{
+		return
+	}
+	If (Mod(ratio, 1) = 0)
+    {
+		ratio := Round(ratio) ;Round to no decimal places
+	}
+	contrastAnalysis := ratio . ":1 = Contrast ratio" . A_return
+	if (ratio >= 7)
+	{
+		contrastAnalysis .= "✔ Regular text (7:1 or greater)" . A_return . "✔ Large text (4.5:1 or greater)" . A_return . "        (Large = 18pt font, or 14pt bold)"
+	}
+	Else if (ratio >= 4.5)
+	{
+		contrastAnalysis .= "✔ Large text (4.5:1 or greater)" . A_return . "        (Large = 18pt font, or 14pt bold)" . A_return . "❌ Regular text (7:1 or greater)"
+	}
+	Else
+	{
+		contrastAnalysis .= "❌ Regular text (7:1 or greater)" . A_return . "❌ Large text (4.5:1 or greater)" . A_return . "        (Large = 18pt font, or 14pt bold)"
+	}
+	Global ContrastMessage
+	ContrastMessage.Value := contrastAnalysis ;Loads results into AuspHex window's Edit control
+}
+
+swapHexes(*) {
+;Swaps the values of hex1 and hex2
+	hexHolder := hex1.Value
+	hex1.Value := hex2.Value
+	hex2.Value := hexholder
+	ContrastCheck()
+}
+
+AuspHex_Destroy(thisGui)
+;Breaks HexVision's loop and destroys both GUIs
+{
+    Global
+	breakloop := True
+	breakloop := False ;Resets the break variable
+	AuspHexWindow.Destroy()
+	ColorSwatch.Destroy()
+}
+
+
+;HOTKEY======================================================
+#HotIf WinExist("AuspHex - Color Viewer & Contrast Analyzer", )
+
+!LButton::
+;Loads the color under the mouse cursor into the AuspHex window
+;Hold the ALt key and click the left mouse button once to load hex1, twice for hex2
+{
+	Global
+	ListLines True
+	MouseGetPos(&MouseX, &MouseY, &RGB) ;Saves the mouse cursor's coordinates
+	color := PixelGetColor(MouseX, MouseY) ;Gets color of pixel under mouse
+	color := SubStr(color, 3) ;Removes the leading "0x" from the hex code, EG, 0xFFFFFF
+	
+	count += 1 ;Counts whether the mouse was clicked once or twice (technically just "more than once")
+	SetTimer(load_hex, -300) ;Waits .3 seconds for another click
+	
+	load_hex() ;Loads the hex code into hex1 (for single click) or hex2 (double/multi click)
+	{
+		Global
+		if (count = 1) ;Single click
+		{
+			Hex1.Value := color ;Loads hex into the AuspHex window's Edit control
+			recolor_visualizer(color, Hex1) ;Updates GUI with new hex value
+		}
+		else ;Double/multi click
+		{
+			Hex2.SetFont("s12") ;Font size was shrunk to fit "Background" in the window, so we reset the size here
+			Hex2.Value := color ;Loads hex into the AuspHex window's Edit control
+			recolor_visualizer(color, Hex2) ;Updates GUI with new hex value
+		}
+		count := 0 ;Resets count
+		ContrastCheck()
+	}
+}
+
+#HotIf
+
+;AuspHex() ;Enable this line (delete the leading ";") to launch the AuspHex window on launch, or keep it commented out if you're incorporating this into a larger script
